@@ -1,4 +1,9 @@
-# Nonlinear Archtecture Search for Privacy Preserving Machine Learning 
+# Seesaw: Compensating for Nonlinear Reduction with Linear Computations for Private Inference
+
+This is the codebase of [Seesaw: Compensating for Nonlinear Reduction with Linear Computations for Private Inference](https://openreview.net/forum?id=jklD0TV5Hw). 
+
+Seesaw is a novel neural architecture search method tailored for PPML. Seesaw exploits a previously unexplored opportunity to leverage more linear computations and nonlinear result reuse, in order to compensate for the accuracy loss due to nonlinear reduction. It incorporates specifically designed pruning and search strategies, not only to efficiently handle the much larger design space of both linear and nonlinear operators, but also to achieve a better balance between the model accuracy and the online/offline execution latencies. 
+
 
 ## Environment configuration
 
@@ -143,3 +148,16 @@ supermodel50 1467648
 ### Train without searching
 
 If you want to reuse the architecture, you can create `checkpoint.json` for ImageNet and `checkpoint2.json` for CIFAR100 in `./checkpoints/oneshot/<model>/<count>/<lossType>`, then set `--spatial` to the shell. After training, just retrain the model without `--spatial` or `--spatial False`.
+
+## Reference
+
+If you use this code, please cite us as follows:
+```
+@inproceedings{seesaw2024icml,
+  title={{Seesaw: Compensating for Nonlinear Reduction with Linear Computations for Private Inference}},
+  author={Li, Fabing and Zhai, Yuanhao and Cai, Shuangyu and Gao, Mingyu},
+  booktitle={{Proceedings of the International Conference on Machine Learning (ICML 2024)}},
+  year={2024}
+}
+
+```
