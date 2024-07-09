@@ -12,7 +12,6 @@ from torchvision import transforms
 from nni.retiarii.fixed import fixed_arch
 
 import utils.datasets as datasets
-from nas.estimator import _get_module_with_type, NonlinearLatencyEstimator
 from utils.putils import LabelSmoothingLoss, accuracy, get_parameters, get_nas_network, reproduce_model
 from nas.retrain import Retrain
 from utils.config import hardware
@@ -84,11 +83,6 @@ if __name__ == "__main__":
                     except:
                         state_dict = torch.load(f)
                     model.load_state_dict(state_dict, strict=False)
-                    # if not args.spatial:
-                    #     # remove softmax and replace branches with low contribution with ZeroLayer
-                    #     for _, module in model.named_modules():
-                    #         if isinstance(module, _SampleLayer):
-                    #             module.replace_zero_layers(1e-4)
     else:
         model = get_nas_network(args)
 

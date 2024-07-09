@@ -22,7 +22,21 @@ class _SampleLayer(nn.Module):
                   'group_8_conv_3x3', 'group_8_conv_5x5', 'group_8_conv_7x7', 
                   'conv_3x1_1x3', 'conv_5x1_1x5', 'conv_7x1_1x7', 
                   'van_conv_3x3', 'van_conv_5x5', 'van_conv_7x7']
-
+    # SAMPLE_OPS = [
+    #     'skip_connect',
+    #     'conv_3x3',
+    #     'conv_1x1',
+    #     'sep_conv_3x3',
+    #     'sep_conv_5x5',
+    #     # 'sep_conv_7x7',
+    #     'dil_conv_3x3',
+    #     'avg_pool_3x3',
+    #     # 'max_pool_3x3',
+    #     'dil_sep_conv_3x3',
+    #     'conv_3x1_1x3',
+    #     'conv_7x1_1x7',
+    #     'van_conv_3x3'
+    # ]
     def __init__(
             self,
             inplanes: int,
@@ -44,7 +58,17 @@ class _SampleLayer(nn.Module):
         for module in self.paths:
             flops.append(calculate_flops(module))
         return flops
+    
+    def remove_layer(self, fixed=11):
+        betas = self.softmax(self.alpha)
 
+        sorted_indices = torch.argsort(betas, descending=True)
+        keep_indices = sorted_indices[:fixed]
+
+        for idx, module in enumerate(self.paths):
+            if idx not in keep_indices:
+                self.paths[idx] = ZeroLayer()
+        
     def replace_zero_layers(self, threshold=1e-2):
         betas = self.softmax(self.alpha)
         replace_indices = [index for index, weight in enumerate(betas) if weight < threshold]
@@ -124,11 +148,6 @@ class AggregateBlock(nn.Module):
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.ReLU()
         )
-        # self.nonlinear = nn.LayerChoice([nn.AvgPool2d(kernel_size=2, stride=2), 
-        #                                  nn.Sequential(
-        #                                     nn.MaxPool2d(kernel_size=2, stride=2),
-        #                                     nn.ReLU())
-        # ])
         self.alpha = nn.Parameter(torch.rand(len(self.layers)) * 1E-3)
         self.softmax = nn.Softmax(dim=-1)
         self.flops_list = self._stat_flops()
@@ -280,17 +299,6 @@ class Supermodel(nn.Module):
                     for i, prob in enumerate(w):
                         total_flops += prob * m.flops_list[i]
         return total_flops
-    
-    # def get_flops_count_list(self):
-    #     flops_list = []              
-    #     counts_list = []
-    #     for m in self.modules():
-    #         if isinstance(m, _SampleLayer) or isinstance(m, AggregateBlock):
-    #             probs = m.nonlinear.export_prob().detach()
-    #             counts_list.append((probs[1], abs(reduce(lambda x, y: x * y, m.output_shape))))
-    #             w = m.softmax(m.alpha).tolist()
-    #             flops_list.append((w, m.flops_list))
-    #     return flops_list, counts_list
 
     def forward(self, x: Tensor) -> Tensor:
         features = [self.features(x)]
@@ -339,3 +347,10 @@ def cifarsupermodel50(num_classes: int = 100, pretrained: bool = False):
 
 def cifarsupermodel101(num_classes: int = 100, pretrained: bool = False):
     return Supermodel(dataset='cifar', block_config=(3, 4, 23, 3), num_classes=num_classes)
+
+
+def cifarsupermodel80(num_classes: int = 100, pretrained: bool = False):
+    return Supermodel(dataset='cifar', block_config=(3, 4, 16, 3), num_classes=num_classes)
+
+def cifarsupermodel152(num_classes: int = 100, pretrained: bool = False):
+    return Supermodel(dataset='cifar', block_config=[3, 8, 36, 3], num_classes=num_classes)

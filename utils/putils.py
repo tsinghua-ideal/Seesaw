@@ -140,6 +140,12 @@ def get_nas_network(args, class_flag=False):
     elif args.net == 'searchcifarsupermodel101':
         from models.supermodel import cifarsupermodel101
         net = cifarsupermodel101
+    elif args.net == 'searchcifarsupermodel80':
+        from models.supermodel import cifarsupermodel80
+        net = cifarsupermodel80
+    elif args.net == 'searchcifarsupermodel152':
+        from models.supermodel import cifarsupermodel152
+        net = cifarsupermodel152
     else:
         print('the network name you have entered is not supported yet')
         sys.exit()

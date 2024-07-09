@@ -62,14 +62,40 @@ class Retrain:
         print('The spatial_training flag is: ', self.spatial_trainable)     
         count = get_relu_count(self.model, self.data_shape)
         print('The relu count of current model is: ', count)
+        self.model.to(self.device)
         
         applied_hardware = {"offline_nonlinear": 0.053842398, "online_nonlinear": 0.174911, "linear": 3.55361855670103E-06}
+        self.applied_hardware = applied_hardware
         self.latency_estimator = Estimator(applied_hardware, self.model, (1,)+self.data_shape)
         
+        fixed_pruning = False
+        
         if spatial_trainable:
+            print('Spatial training')
             self.export_path = export_path.rstrip('.pth') + '.o'   
-            _, nonlinear = self.latency_estimator.cal_expected_latency(self.model)
+            nonlinear = get_relu_count(self.model, self.data_shape) * applied_hardware['online_nonlinear']
             self.nonlinear_cost = nonlinear
+            # self.applied_hardware = {"nonlinear": 0.174911, "offline_linear": 3.44E-05, "online_linear": 7.01E-08}
+            # self.nonlinear_cost = get_relu_count(self.model, self.data_shape) * self.applied_hardware['nonlinear']
+        elif fixed_pruning:
+            self.export_path = export_path.rstrip('.pth') + '-' + str(count) + '.pth-fixed'
+            print('The loading path is: ', self.export_path)
+            if os.path.exists(self.export_path):
+                st = torch.load(self.export_path)
+                self.model.load_state_dict(st, strict=False)    
+            print('Pruning linear operators ...')
+            for _, module in model.named_modules():
+                if isinstance(module, _SampleLayer):
+                    module.remove_layer()
+            online = get_relu_count(self.model, self.data_shape) * applied_hardware['online_nonlinear']
+            self.model.eval()
+            if torch.cuda.is_available():
+                flops_counter = FlopCountAnalysis(self.model, torch.rand((1,)+self.data_shape).cuda())
+            else:
+                flops_counter = FlopCountAnalysis(self.model, torch.rand((1,)+self.data_shape).cpu())
+            self.model.train()
+            offline = flops_counter.total() * applied_hardware['linear'] + count * applied_hardware['offline_nonlinear']
+            print(f'offline cost: {offline}, online cost: {online}')
         else: 
             self.export_path = export_path.rstrip('.pth') + '-' + str(count) + '.pth-var'
             print('The loading path is: ', self.export_path)
@@ -94,9 +120,9 @@ class Retrain:
                 if linear < nonlinear or abs(linear - nonlinear)/nonlinear < 1e-6 or old_linear == linear:
                     break
                 old_linear = linear
-            print(f'linear cost: {linear}, nonlinear cost: {nonlinear}')
             print('Finish pruning linear operators ...')
         print('The export path is: ', self.export_path)
+        self.model.to(self.device)
         self.model.eval()
         if torch.cuda.is_available():
             flops_counter = FlopCountAnalysis(self.model, torch.rand((1,)+self.data_shape).cuda())
@@ -165,11 +191,6 @@ class Retrain:
                     if isinstance(module, _SampleLayer):
                         l1_reg += torch.var(module.alpha)
                 loss -= l1_reg * 1e-4
-                if isinstance(self.model, torch.nn.DataParallel):
-                    flops = self.model.module.get_total_flops(max_latency=False)
-                else:
-                    flops = self.model.get_total_flops(max_latency=False)
-                loss += abs(flops * (self.applied_hardware['offline_linear'] + self.applied_hardware['online_linear']) - self.nonlinear_cost) / self.nonlinear_cost * 1e-1
             acc1, acc5 = accuracy(output, labels, topk=(1, 5))
             losses.update(loss, images.size(0))
             top1.update(acc1[0], images.size(0))
@@ -186,7 +207,6 @@ class Retrain:
 
             if i % 10 == 0 or i + 1 == len(self.train_loader):
                 batch_log = train_log_func(i, batch_time, data_time, losses, top1, top5, new_lr)
-                # print(batch_log)
                 # print(batch_log)
         return top1, top5
 
@@ -213,14 +233,12 @@ class Retrain:
             # cosine
             T_total = n_epochs * nBatch
             T_cur = epoch * nBatch + batch
-            # init_lr = 0.05
             new_lr = 0.5 * 0.05 * (1 + math.cos(math.pi * T_cur / T_total))
             for param_group in optimizer.param_groups:
                 param_group['lr'] = new_lr
             return new_lr
 
         for epoch in range(self.n_epochs):
-            # print('\n', '-' * 30, 'Train epoch: %d' % (epoch + 1), '-' * 30, '\n')
             # print('\n', '-' * 30, 'Train epoch: %d' % (epoch + 1), '-' * 30, '\n')
             end = time.time()
             train_top1, train_top5 = self.train_one_epoch(
@@ -229,7 +247,7 @@ class Retrain:
                 train_log_func(epoch, i, batch_time, data_time, losses, top1, top5, new_lr),
             )
             time_per_epoch = time.time() - end
-            seconds_left = int((self.n_epochs - epoch - 1) * time_per_epoch)
+            # seconds_left = int((self.n_epochs - epoch - 1) * time_per_epoch)
             # print('Time per epoch: %s, Est. complete in: %s' % (
             #     str(timedelta(seconds=time_per_epoch)),
             #     str(timedelta(seconds=seconds_left))))

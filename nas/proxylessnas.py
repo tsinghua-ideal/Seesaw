@@ -5,8 +5,6 @@ import os
 import logging
 import pickle
 import time
-from models.supermodel import _SampleLayer
-import math
 
 import torch
 import torch.nn as nn
@@ -15,8 +13,7 @@ import torch.nn.functional as F
 from nni.retiarii.oneshot.interface import BaseOneShotTrainer
 from nni.retiarii.oneshot.pytorch.utils import AverageMeterGroup, replace_layer_choice, replace_input_choice, to_device
 
-from nas.estimator import Estimator, _get_module_with_type
-from utils.tools import get_relu_count
+from nas.estimator import Estimator
 
 _logger = logging.getLogger(__name__)
 torch.autograd.set_detect_anomaly(True)
@@ -160,6 +157,14 @@ class ProxylessTrainer(BaseOneShotTrainer):
         The dummy input shape when applied to the target hardware.
     ref_latency: float
         Reference latency value in the applied hardware (ms).
+    checkpoint_path: string
+        Path to save the checkpoint.
+    expect_latency_rate: float
+        The expected latency rate of the model.
+    offline_upper: float
+        The offline upper bound of the model.
+    teacher: nn.Module
+        The teacher model for knowledge distillation.
     """
 
     def __init__(self, model, loss, metrics, optimizer,
@@ -187,8 +192,8 @@ class ProxylessTrainer(BaseOneShotTrainer):
         self.checkpoint_path = checkpoint_path
 
         # Hyper parameters
-        self.reg_lambda = 0.005
-        self.reg_l1_var = 0.001
+        self.reg_lambda = 0.05
+        self.reg_l1_var = 0.01
 
         # knowledge distillation
         self.teacher = teacher
@@ -200,6 +205,7 @@ class ProxylessTrainer(BaseOneShotTrainer):
         self.alpha = 0.3
         self.soft_loss = nn.KLDivLoss(reduction='batchmean')
 
+        # latency predictor
         if not applied_hardware:
             applied_hardware = {"nonlinear": 0.228753397836538, "linear": 3.55361855670103E-06}
         self.latency_estimator = Estimator(applied_hardware, model, offline_upper, dummy_input)
@@ -311,7 +317,6 @@ class ProxylessTrainer(BaseOneShotTrainer):
         linear, nonlinear = self.latency_estimator.cal_expected_latency(self.model)
         expected_latency = linear + nonlinear
         
-        # loss_balance = abs(linear/nonlinear) + abs(nonlinear/linear)
         loss_balance = abs(linear - nonlinear)/nonlinear
 
         if self.reg_loss_type == 'add#linear':
